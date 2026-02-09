@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Odoo Theme Switcher (Modern UI)
 // @namespace    http://tampermonkey.net/
-// @version      1.2.1
+// @version      1.3.0
 // @description  Ajoute un sélecteur de thème + un thème moderne (boutons arrondis) sur Odoo
 // @author       Alexis.Sair
 // @match        *://*.odoo.com/*
@@ -17,7 +17,10 @@
 
   const STORAGE_KEY = 'odoo_theme_switcher:selected_theme';
   const STYLE_ID = 'odoo-theme-switcher-style';
-  const UI_ID = 'odoo-theme-switcher-ui';
+  // UI_ID supprimé: plus de bouton flottant, uniquement dans le menu (comme demandé)
+  const MENU_BTN_ID = 'ots-theme-btn';
+  const THEME_BG_ID = 'ots-theme-bg';
+  const THEME_POPUP_ID = 'ots-theme-popup';
   const LOG_PREFIX = '[OTS]';
 
   // Gestion robuste d'injection CSS (CSP / head absent / mise à jour SPA)
@@ -1120,119 +1123,86 @@ ${ODOO_DARK_SHELL}
     document.documentElement.setAttribute('data-ots-theme', tId);
     document.documentElement.setAttribute('data-ots-running', '1');
 
-    // CSS final: (1) CSS du thème (2) CSS du widget selector (toujours)
+    // CSS final: (1) CSS du thème (2) (UI gérée en inline dans la popup)
     const css = [
       themeCss,
-      getSwitcherUiCss(),
     ].filter(Boolean).join('\n\n');
     setInjectedCss(css);
     log('Theme appliqué =', tId, 'mode CSS =', cssInjectionState.mode, 'url =', location.href);
   }
 
-  function getSwitcherUiCss() {
-    return `
-/* ===== Odoo Theme Switcher UI ===== */
-#${UI_ID}{
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2147483647;
-  font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
-}
+  function findGamificationBadgesAnchor() {
+    // Le bouton est créé par gamification.js et s'appelle "badges-btn"
+    const badgesBtn = document.getElementById('badges-btn');
+    if (badgesBtn) return badgesBtn;
+    const rewardsBtn = document.getElementById('rewards-btn');
+    if (rewardsBtn) return rewardsBtn;
 
-#${UI_ID} .ots-pill{
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 999px;
-  background: rgba(34,40,49,.88);
-  color: #f3f6fa;
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 12px 30px rgba(0,0,0,.28);
-  backdrop-filter: blur(10px);
-}
-
-#${UI_ID} .ots-title{
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: .2px;
-  opacity: .92;
-  white-space: nowrap;
-}
-
-#${UI_ID} select{
-  appearance: none;
-  border-radius: 999px;
-  padding: 8px 34px 8px 12px;
-  border: 1px solid rgba(255,255,255,.16);
-  background: rgba(255,255,255,.06);
-  color: #f3f6fa;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-#${UI_ID} select:focus{
-  outline: none;
-  box-shadow: 0 0 0 .2rem rgba(32,156,255,.25);
-}
-
-#${UI_ID} .ots-chevron{
-  position: absolute;
-  right: 22px;
-  pointer-events: none;
-  width: 0;
-  height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid rgba(243,246,250,.85);
-}
-
-#${UI_ID} .ots-selectWrap{
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-@media (max-width: 520px){
-  #${UI_ID}{ right: 10px; bottom: 10px; }
-  #${UI_ID} .ots-title{ display:none; }
-}
-    `.trim();
+    // Même ancrage que gamification.js (Analyse)
+    return (
+      document.querySelector('.o_menu_sections .dropdown-toggle[title="Analyse"]') ||
+      document.querySelector('.o_menu_sections .dropdown-toggle[title="Analysis"]') ||
+      document.querySelector('.o_menu_sections .dropdown-toggle[title="Analyses"]')
+    );
   }
 
-  function ensureUi() {
-    if (document.getElementById(UI_ID)) return;
+  function closeThemePopup() {
+    const old = document.getElementById(THEME_POPUP_ID);
+    const oldBg = document.getElementById(THEME_BG_ID);
+    if (old) old.remove();
+    if (oldBg) oldBg.remove();
+  }
 
-    const root = document.createElement('div');
-    root.id = UI_ID;
-    // Styles inline minimalistes pour être visible même si CSP bloque l'injection CSS.
-    root.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;';
-    root.innerHTML = `
-      <div class="ots-pill">
-        <div class="ots-title">Thème Odoo</div>
-        <div class="ots-selectWrap">
-          <select id="ots-theme-select" aria-label="Sélecteur de thème Odoo"></select>
-          <div class="ots-chevron"></div>
-        </div>
+  function showThemePopup() {
+    closeThemePopup();
+
+    const bg = document.createElement('div');
+    bg.id = THEME_BG_ID;
+    bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.40);z-index:1000000;';
+    bg.addEventListener('click', closeThemePopup);
+    document.body.appendChild(bg);
+
+    const popup = document.createElement('div');
+    popup.id = THEME_POPUP_ID;
+    popup.style.cssText = [
+      'position:fixed',
+      'top:50%',
+      'left:50%',
+      'transform:translate(-50%,-50%)',
+      'z-index:1000001',
+      'width:min(520px, 94vw)',
+      'max-height:86vh',
+      'overflow:auto',
+      'border-radius:18px',
+      'border:1px solid rgba(255,255,255,.12)',
+      'background:rgba(34,40,49,0.96)',
+      'color:#f3f6fa',
+      'box-shadow:0 18px 60px rgba(0,0,0,.40)',
+      'backdrop-filter:blur(10px)',
+      'font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif',
+      'padding:16px 16px 14px 16px',
+    ].join(';');
+
+    const selectId = 'ots-theme-select-popup';
+    popup.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+        <div style="font-weight:900;font-size:16px;letter-spacing:.2px;">🎨 Choisir un thème</div>
+        <button id="ots-theme-close" style="background:none;border:none;color:#ffb3d6;font-size:22px;line-height:1;cursor:pointer;">×</button>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <select id="${selectId}" style="flex:1;appearance:none;border-radius:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#f3f6fa;font-weight:700;cursor:pointer;"></select>
+        <button id="ots-theme-apply" style="padding:10px 14px;border:none;border-radius:12px;background:linear-gradient(90deg,#ff4fa3,#ff86c8);color:#111;font-weight:900;cursor:pointer;">Appliquer</button>
       </div>
     `;
 
-    document.body.appendChild(root);
+    document.body.appendChild(popup);
 
-    // Fallback inline pour le “pill” si CSS non injecté
-    const pill = root.querySelector('.ots-pill');
-    if (pill && pill instanceof HTMLElement) {
-      pill.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:999px;background:rgba(34,40,49,.88);color:#f3f6fa;border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 30px rgba(0,0,0,.28);backdrop-filter:blur(10px);';
-    }
+    const closeBtn = popup.querySelector('#ots-theme-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeThemePopup);
 
-    const select = root.querySelector('#ots-theme-select');
+    const select = popup.querySelector(`#${selectId}`);
     if (!select) return;
-    if (select instanceof HTMLElement) {
-      select.style.cssText = 'appearance:none;border-radius:999px;padding:8px 34px 8px 12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#f3f6fa;font-weight:600;cursor:pointer;';
-    }
 
-    // Options
     for (const [id, def] of Object.entries(THEMES)) {
       const opt = document.createElement('option');
       opt.value = id;
@@ -1240,13 +1210,38 @@ ${ODOO_DARK_SHELL}
       select.appendChild(opt);
     }
 
-    // Valeur initiale
     select.value = getSelectedThemeId();
 
-    // Change handler
+    const applyBtn = popup.querySelector('#ots-theme-apply');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', () => {
+        applyTheme(String(select.value || ''));
+        closeThemePopup();
+      });
+    }
+
     select.addEventListener('change', () => {
-      applyTheme(select.value);
+      // Application immédiate (plus agréable)
+      applyTheme(String(select.value || ''));
     });
+  }
+
+  function ensureMenuThemeButton() {
+    if (document.getElementById(MENU_BTN_ID)) return true;
+
+    const anchor = findGamificationBadgesAnchor();
+    if (!anchor || !anchor.parentElement) return false;
+
+    // Reprend exactement l'approche de gamification.js: clone d'un bouton de menu existant.
+    const btn = anchor.cloneNode(true);
+    btn.id = MENU_BTN_ID;
+    btn.title = 'Choisir un thème';
+    btn.setAttribute('data-section', 'theme');
+    btn.innerHTML = '<span>🎨 Thèmes</span>';
+    btn.onclick = (e) => { e.stopPropagation(); showThemePopup(); };
+
+    anchor.parentElement.insertAdjacentElement('afterend', btn);
+    return true;
   }
 
   function ready(fn) {
@@ -1269,11 +1264,13 @@ ${ODOO_DARK_SHELL}
     }
 
     applyTheme(getSelectedThemeId());
-    ensureUi();
+    // Place le bouton Thèmes au même endroit que "Badges" (gamification.js)
+    ensureMenuThemeButton();
 
     // Certains écrans Odoo remplacent le body: on ré-injecte l'UI si besoin.
     const mo = new MutationObserver(() => {
-      if (!document.getElementById(UI_ID) && document.body) ensureUi();
+      // Ré-injection du bouton si le menu est rerendu
+      ensureMenuThemeButton();
       // Assure que le CSS reste présent (Odoo/SPA peut “nettoyer” le head sur certains écrans)
       if (!document.getElementById(STYLE_ID)) {
         applyTheme(getSelectedThemeId());
