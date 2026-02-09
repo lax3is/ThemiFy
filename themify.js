@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         Odoo Theme Switcher (Modern UI)
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.2.1
 // @description  Ajoute un sélecteur de thème + un thème moderne (boutons arrondis) sur Odoo
 // @author       Alexis.Sair
 // @match        *://*.odoo.com/*
 // @match        *://*/web*
 // @run-at       document-start
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/lax3is/ThemiFy/refs/heads/main/themify.js
+// @downloadURL  https://raw.githubusercontent.com/lax3is/ThemiFy/refs/heads/main/themify.js
 // ==/UserScript==
 
 (function () {
